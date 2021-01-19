@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>Hello World!</title>
+    <url>/2020/12/17/Hello-World/</url>
+    <content><![CDATA[<h1 id="Hello-world-This-is-my-first-blog"><a href="#Hello-world-This-is-my-first-blog" class="headerlink" title="Hello world! This is my first blog!"></a>Hello world! This is my first blog!</h1><p>​    反复折腾了快２个月，我承认我很懒，也很强迫症，从WordPress到Typecho最后再到Hexo，真的好难做选择233.</p>
+<p>​    写自己的技术博客这种想法，很早就有了，但迫于种种原因，比如说升学、参加乱七八糟的比赛以及和乱七八糟的人扯皮等等，博客搭了一次又拆了一次，每次总是写了几篇便不了了之。2020对每个人来说都是不平凡的一年，疫情肆虐全球的同时，我也在一步步摸索中找到了自己真正喜欢的东西。</p>
+<p>​    差不多也就是几个月前吧，由于全面深刻地认识到了国内外学术水平的巨大差距（迫真），决定不管怎样，死也不会在国内读博（真相警告？）。但疫情、自己难以拿出手的GPA以及不太丰厚的学术成果（我承认我在灌水），又使得自己徘徊在考研、保研以及出国这三条路上。在最后多方妥协以及幸运之神的眷顾下，最后还是顺利保研到了。</p>
+<p>​    有一说一，虽然导师的学术水平不太高，但是人品和对待学生这方面是真滴奈斯，虽然他做的方向我谈不上喜欢，但也不算抗拒。于是决定在今后三年多的时间里，一手搞科研（指做导师的项目），一手摸鱼（指学pwn，更准确地说应该叫Software Security）。但愿在三年以后，我能拿的出足够的学术成果去一个人品好，对学生奈斯，还是做软件安全的大牛吧！也许我在想peach，但人总是要有梦想的嘛！</p>
+]]></content>
+      <categories>
+        <category>杂</category>
+      </categories>
+      <tags>
+        <tag>杂</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>uaf漏洞原理浅析</title>
+    <url>/2021/01/19/uaf/</url>
+    <content><![CDATA[<h1 id="UAF原理浅析"><a href="#UAF原理浅析" class="headerlink" title="UAF原理浅析"></a>UAF原理浅析</h1><p>uaf，即user after free，是一种常见软件漏洞，最开始接触到uaf是大约一个月以前在<a href="https://pwnable.kr/play.php">pwnbale.kr</a>中碰到的一道关于uaf的基础习题，就当是学习一个新的知识点了。对于<a href="https://pwnable.kr/play.php">pwnbale.kr</a>上这道uaf的writeup，会放在另一篇博客中来讲。这篇博客主要以一个简单用C编写的Demo<del>（实际上是网上随便找的拔下来改了改）</del>，粗浅地分析了一下uaf漏洞形成的原理，具体的漏洞利用就放到下篇博客去写，并且挖下了一些坑，<del>但愿填的上吧</del>。</p>
+<h2 id="UAF原理分析"><a href="#UAF原理分析" class="headerlink" title="UAF原理分析"></a>UAF原理分析</h2><p>首先来看这样一个简易的demo。</p>
+<figure class="highlight c"><table><tr><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdio.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;stdlib.h&gt;</span></span></span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> <span class="title">demo</span>&#123;</span></span><br><span class="line">    <span class="keyword">char</span> *<span class="built_in">string</span>;</span><br><span class="line">    <span class="comment">// A function pointer called func, it points to a function with one char* parameter and retrun nothing</span></span><br><span class="line">    <span class="keyword">void</span> (*func)(<span class="keyword">char</span> *);</span><br><span class="line">&#125; DEMO;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">eval</span><span class="params">(<span class="keyword">char</span>* command)</span></span>&#123;</span><br><span class="line">    system(command);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">echo</span><span class="params">(<span class="keyword">char</span>* content)</span></span>&#123;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;%s&quot;</span>, content);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span></span>&#123;</span><br><span class="line">    DEMO *demo1;</span><br><span class="line">    DEMO *demo2;</span><br><span class="line">    </span><br><span class="line">    demo1 = (DEMO *)<span class="built_in">malloc</span>(<span class="keyword">sizeof</span>(struct demo));</span><br><span class="line">    demo1-&gt;<span class="built_in">string</span> = <span class="string">&quot;This is demo1.\n&quot;</span>;</span><br><span class="line">    </span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, demo1-&gt;<span class="built_in">string</span>);</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;demo1 malloc address:%p\n&quot;</span>, demo1);</span><br><span class="line">    </span><br><span class="line">    demo1-&gt;func = echo;</span><br><span class="line">    demo1-&gt;func(<span class="string">&quot;use after free!\n&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="built_in">free</span>(demo1);</span><br><span class="line">    demo1-&gt;<span class="built_in">string</span> = <span class="string">&quot;This is demo2\n&quot;</span>;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;%s\n&quot;</span>, demo1-&gt;<span class="built_in">string</span>);</span><br><span class="line">    demo2 = (DEMO *)<span class="built_in">malloc</span>(<span class="keyword">sizeof</span>(struct demo));</span><br><span class="line">    demo2-&gt;func = eval;</span><br><span class="line">    <span class="built_in">printf</span>(<span class="string">&quot;demo2 malloc address:%p\n&quot;</span>, demo2);</span><br><span class="line">    demo2-&gt;func(<span class="string">&quot;whoami&quot;</span>);</span><br><span class="line">    demo1-&gt;func(<span class="string">&quot;whoami&quot;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>这个demo比较简单，通读一遍能够很快地了解大概。首先，这个demo定义了一个结构体，其中包含有一个char类型指针以及指向带有一个char* 参数，返回值为空的<strong>函数指针</strong>，然后定义了两个非常简单的函数。main函数中使用<code>malloc</code>给<code>demo1</code>和<code>demo2</code>分配动态内存空间，但在将<code>demo1</code>释放时，没有将<code>demo1</code>指针置为<code>NULL</code>，使得这样形成了一个典型的<strong>user after free</strong>漏洞。</p>
+<p>这里结构体定义中的指向函数的指针声明方法比较interesting，<del>最开始读了半天读不懂这是在干嘛，是我太菜了。</del><code>void (*func)(char *);</code>此处定义的是一个叫作<code>func</code>的函数指针，这个函数指针的返回值为<code>void</code>，且该函数带有<strong>1个</strong>参数，而这个参数的类型<code>char *</code>。类比熟悉的C函数声明<code>void func(char* s)</code>，就不难理解指向函数的指针的声明方法了。这里说明一下为什么在声明指向函数的指针时必须写作<code>void (*func)(char*)</code>而不是<code>void* func(char*)</code>，因为后者声明的是<code>func</code>该函数的返回值是一个<code>void*</code>指针。</p>
+<p>编译该程序并运行，程序运行的结果如下图。分析程序程序运行的结果，<code>demo1</code>与<code>demo2</code>两个结构体指针指向的实际上是同一块堆内存的地址。<code>demo1</code>通过<code>malloc</code>函数向操作系统申请内存，获取到了这块堆内存的地址，使用后后又通过<code>free</code>函数将这块内存释放，但由于指向该内存地址的指针<code>demo1</code>并没有被置空，使得程序接下来仍然可以通过<code>demo1</code>指针操纵其指向的内存空间，由此产生了一个典型的**”user after free”**漏洞。当程序再次向使用<code>malloc</code>向操作系统申请内存时，由于两次请求的内存空间大小相同，以及基于<code>malloc</code>函数对堆内存空间的分配特性，操作系统将之前分配给<code>demo1</code>的内存空间再次分配给了<code>demo2</code>，即<code>demo1</code>与<code>demo2</code>两个结构体使用的实际上是同一块内存（程序运行结果中<code>demo1</code>与<code>demo2</code>两个指针的值相同），加之<code>demo1</code>指针未被置空，使得程序可以通过<code>demo1</code>指针来操控<code>demo2</code>结构体，可以基于此实现劫持数据流、对任意地址进行读写等等。</p>
+<img src="/2021/01/19/uaf/demo.png" alt="demo">
+
+<p>最后多逼逼一下<code>malloc</code>函数，关于<code>malloc</code>以及操作系统对堆内存的分配、管理以及回收机制，这里挖一个坑，在假期里会抽空研究研究，此处就不多做纠结。</p>
+<h2 id="Reference"><a href="#Reference" class="headerlink" title="Reference"></a>Reference</h2><p>[1]  <a href="https://www.cnblogs.com/L0g4n-blog/p/12887869.html">https://www.cnblogs.com/L0g4n-blog/p/12887869.html</a><br>[2]  <a href="https://www.anquanke.com/post/id/85281">https://www.anquanke.com/post/id/85281</a></p>
+]]></content>
+      <categories>
+        <category>pwn</category>
+        <category>基础知识</category>
+      </categories>
+      <tags>
+        <tag>uaf</tag>
+        <tag>pwn</tag>
+      </tags>
+  </entry>
+</search>
